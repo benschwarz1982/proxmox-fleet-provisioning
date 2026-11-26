@@ -1,3 +1,8 @@
 *.iso
 answer.toml
 __pycache__/
+.cache/
+report.xml
+gl-code-quality-report.json
+.pytest_cache/
+.ruff_cache/

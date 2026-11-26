@@ -1,5 +1,6 @@
-# Mirrors the GitLab pipeline's validate + build stages on GitHub.
-# Deployment is a separate, manually triggered workflow (deploy-pve.yml).
+# Lint, unit tests and an image test build on every push to main and every
+# pull request. Deployment is a separate, manually triggered workflow
+# (deploy-pve.yml).
 name: CI
 
 on:
@@ -15,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    runs-on: ubuntu-24.04
+  lint:
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -24,11 +25,32 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13" # same as Debian trixie in the CI image
-      - run: python3 -m py_compile provision.py
+          python-version: "3.15" # same as the CI image
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check --output-format=github .
+      - run: ruff format --check .
+
+  test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      # gpg/gpgv/openssl come with the runner image. With CI=true (set by
+      # GitHub) the tests that need them never skip - they fail if missing.
+      - run: pytest
 
   build-image:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

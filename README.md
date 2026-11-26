@@ -134,7 +134,7 @@ override:**
 old `PROXMOX_BASE_ISO_URL` is rejected with an error; set both
 together to pin one, e.g. `proxmox-ve_9.3-1.iso` +
 `cc4fc97b9ac3a5712ad5b665195753571923a18e11f5c2ebb113fdc29a50bd36`),
-`PROXMOX_KEYRING` (`/etc/apt/trusted.gpg.d/proxmox-release-trixie.gpg`),
+`PROXMOX_KEYRING` (`/usr/share/keyrings/proxmox-release-trixie.gpg`),
 `AZURE_CONTAINER` (`iso`), `PVE_TIMEZONE` (`Europe/Zurich`), `PVE_KEYBOARD` (`de-ch`),
 `PVE_COUNTRY` (`ch`), `PVE_NIC_INDEX` (`1`), `PVE_DISK_MODEL`
 (`Samsung SSD 870 QVO 1TB`).
@@ -146,8 +146,10 @@ concurrent runs. Don't start two runs against the *same* server.
 
 ## Usage with GitHub Actions
 
-- `.github/workflows/ci.yml` - on pushes to `main` and on pull requests:
-  syntax check of `provision.py` and a test build of the CI image.
+- `.github/workflows/ci.yml` - on pushes to `main` and on pull requests,
+  three jobs: `lint` (`ruff check` + `ruff format --check`), `test`
+  (`pytest`) and `build-image` (test build of the CI image). Make these
+  three required status checks for `main`.
 - `.github/workflows/deploy-pve.yml` - manual only: **Actions → Deploy
   Proxmox VE → Run workflow**, with required fields `pve_hostname`,
   `pve_static_ip`, `ilo_url` (no defaults, so nothing can be reinstalled by
@@ -179,7 +181,8 @@ apply (no web UI check, Proxmox download may be blocked).
 ## Usage with GitLab CI (alternative)
 
 `.gitlab-ci.yml` provides the same flow for a GitLab-hosted copy of this
-repository, with the stages `validate` → `build` (CI image, pushed to the
+repository, with the stages `validate` (`validate:lint`, `validate:test`,
+with GitLab code-quality and JUnit reports) → `build` (CI image, pushed to the
 project's container registry whenever the `Dockerfile` changes) → `deploy`.
 
 One-time setup - **Settings → CI/CD → Variables**: the fleet-wide config
@@ -197,6 +200,30 @@ re-provisioning whatever server the last real example happened to be. Then
 run the `deploy:pve` job (manual). If your runner concurrency limit
 (Settings → CI/CD → Runners) is lower than the number of servers started at
 once, the extra runs simply queue.
+
+## Development
+
+```sh
+python3.15 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+ruff check . && ruff format --check .
+pytest
+```
+
+The unit tests (`tests/`) cover the pure logic - release selection,
+signature verification (with throwaway GPG keys), configuration checks,
+password hashing and ISO naming - without touching iLO, Azure or the
+network. Tests that need `gpg`/`gpgv`/`openssl` are skipped locally if a tool
+is missing, but always run in CI. Tool versions are pinned in
+`requirements-dev.txt`; lint/test settings live in `pyproject.toml`.
+
+The CI image (`Dockerfile`) is `python:3.15-slim-trixie` (pinned by digest)
+plus only `gpgv`, `openssl`, `xorriso` and `proxmox-auto-install-assistant`;
+the Proxmox release key is fetched with a pinned checksum and trusted by apt
+for the Proxmox repo only.
+
+`.github/dependabot.yml` opens weekly PRs for new versions of the pinned
+GitHub Actions, dev tools and the base image.
 
 ## Known limitations
 

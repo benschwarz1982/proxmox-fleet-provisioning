@@ -22,17 +22,46 @@ variables:
     description: "Full iLO base URL incl. scheme+port, e.g. https://ilo.example.com:4415 - CHANGE before running, this placeholder does not resolve."
     value: "https://ilo.example.com:0"
 
-validate:python:
+.python:
+  image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  cache:
+    key:
+      files: [requirements-dev.txt]
+    paths: [.cache/pip]
+  before_script:
+    - pip install -r requirements-dev.txt
+
+validate:lint:
+  extends: .python
   stage: validate
-  image: python:3.13-slim
   script:
-    - python3 -m py_compile provision.py
+    - ruff check --output-format=gitlab --output-file=gl-code-quality-report.json . || { ruff check --output-format=concise .; exit 1; }
+    - ruff format --check .
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+
+validate:test:
+  extends: .python
+  stage: validate
+  script:
+    # The tests need gpg/gpgv/openssl; with CI=true (set by GitLab) they fail
+    # instead of being skipped if a tool is missing.
+    - apt-get update && apt-get install -y --no-install-recommends gnupg gpgv openssl
+    - pytest --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
 
 build:image:
   stage: build
-  image: docker:27
+  image: docker:29.10.1@sha256:fbbc96e0af32cdc190aff92ba97a1281a115351a723afe21af78879cc55126b0
   services:
-    - docker:27-dind
+    - docker:29.10.1-dind@sha256:fbbc96e0af32cdc190aff92ba97a1281a115351a723afe21af78879cc55126b0
   script:
     - docker build -t "$CI_REGISTRY_IMAGE:latest" .
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"

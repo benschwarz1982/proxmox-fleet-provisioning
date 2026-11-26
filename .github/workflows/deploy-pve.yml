@@ -37,7 +37,7 @@ concurrency:
 jobs:
   deploy:
     name: deploy ${{ inputs.pve_hostname }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Holds the fleet secrets/variables; add "Required reviewers" to it in
     # Settings -> Environments for a manual approval before each reinstall.
     environment: pve-fleet

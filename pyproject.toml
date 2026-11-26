@@ -1,0 +1,37 @@
+# Tool configuration only - provision.py is a standalone script, not a
+# package, and has no runtime dependencies beyond the Python stdlib.
+[tool.ruff]
+target-version = "py315" # Python in the CI image
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import sorting
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "S",   # flake8-bandit (security)
+]
+ignore = [
+    # Line length is the formatter's job; long log messages stay readable.
+    "E501",
+    # urlopen: every URL is built from https:// bases that load_config()
+    # enforces (ILO_URL, PROXMOX_ISO_BASE_URL) or the fixed Azure Blob host.
+    "S310",
+    # subprocess: fixed tools (gpgv, openssl, proxmox-auto-install-assistant)
+    # with argument lists, no shell, inside the controlled CI image.
+    "S603",
+    "S607",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: plain asserts and fixed test credentials are fine.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."] # provision.py is a top-level script, not a package
+addopts = "-ra --strict-markers"

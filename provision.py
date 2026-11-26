@@ -10,6 +10,7 @@ dependencies needed in the CI image. Every step mirrors the bash version
 this replaced, validated empirically against real servers across many runs;
 this is a faithful port, not a redesign.
 """
+
 import base64
 import hashlib
 import http.client
@@ -62,6 +63,13 @@ _SSL_CTX.check_hostname = False
 _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 
+def is_https_url(url):
+    """True for an https:// URL with a host - "https:/host" (one slash) has
+    the right scheme but no host, so the scheme check alone isn't enough."""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and bool(parts.hostname)
+
+
 def load_config():
     global PVE_HOSTNAME, PVE_STATIC_IP, ILO_URL
     global ILO_USER, PVE_GATEWAY, PVE_DNS, AZURE_STORAGE_ACCOUNT
@@ -76,7 +84,7 @@ def load_config():
     ILO_URL = require_env("ILO_URL", "https://ilo.example.com:4415")
     # The iLO password is sent (Basic auth) on the very first request, so
     # never over plain HTTP.
-    if urllib.parse.urlsplit(ILO_URL).scheme != "https":
+    if not is_https_url(ILO_URL):
         log(f"ERROR: ILO_URL must start with https:// (got {ILO_URL}).")
         sys.exit(1)
 
@@ -117,6 +125,9 @@ def load_config():
 
     # Defaults - no CI/CD variable needed; setting one just overrides the default.
     PROXMOX_ISO_BASE_URL = env_default("PROXMOX_ISO_BASE_URL", "https://enterprise.proxmox.com/iso/").rstrip("/") + "/"
+    if not is_https_url(PROXMOX_ISO_BASE_URL):
+        log(f"ERROR: PROXMOX_ISO_BASE_URL must start with https:// (got {PROXMOX_ISO_BASE_URL}).")
+        sys.exit(1)
     PROXMOX_MAJOR = int(env_default("PROXMOX_MAJOR", "9"))
     # Optional pin: set BOTH to skip the "latest release" lookup entirely.
     # Left unset (the normal case), resolve_stock_iso() picks the newest
@@ -130,12 +141,16 @@ def load_config():
         PROXMOX_ISO_SHA256 = PROXMOX_ISO_SHA256.lower()
         m = _ISO_NAME_RE.match(PROXMOX_ISO_NAME)
         if not m or int(m.group(1)) != PROXMOX_MAJOR or not re.fullmatch(r"[0-9a-f]{64}", PROXMOX_ISO_SHA256):
-            log(f"ERROR: PROXMOX_ISO_NAME/PROXMOX_ISO_SHA256 must be an amd64 proxmox-ve_{PROXMOX_MAJOR}.x-y.iso and a 64-hex sha256.")
+            log(
+                f"ERROR: PROXMOX_ISO_NAME/PROXMOX_ISO_SHA256 must be an amd64 proxmox-ve_{PROXMOX_MAJOR}.x-y.iso and a 64-hex sha256."
+            )
             sys.exit(1)
     if os.environ.get("PROXMOX_BASE_ISO_URL"):
-        log("ERROR: PROXMOX_BASE_ISO_URL is no longer supported - use PROXMOX_ISO_NAME + PROXMOX_ISO_SHA256 to pin a release (see README).")
+        log(
+            "ERROR: PROXMOX_BASE_ISO_URL is no longer supported - use PROXMOX_ISO_NAME + PROXMOX_ISO_SHA256 to pin a release (see README)."
+        )
         sys.exit(1)
-    PROXMOX_KEYRING = env_default("PROXMOX_KEYRING", "/etc/apt/trusted.gpg.d/proxmox-release-trixie.gpg")
+    PROXMOX_KEYRING = env_default("PROXMOX_KEYRING", "/usr/share/keyrings/proxmox-release-trixie.gpg")
     AZURE_CONTAINER = env_default("AZURE_CONTAINER", "iso")
     PVE_TIMEZONE = env_default("PVE_TIMEZONE", "Europe/Zurich")
     PVE_KEYBOARD = env_default("PVE_KEYBOARD", "de-ch")
@@ -197,6 +212,7 @@ def signature_ok(data, signature):
     in our keyring show up as ERRSIG (unknown key) and make gpgv exit non-zero,
     so the status lines are evaluated instead of the exit code."""
     import tempfile
+
     with tempfile.TemporaryDirectory() as d:
         data_path, sig_path = os.path.join(d, "SHA256SUMS"), os.path.join(d, "SHA256SUMS.asc")
         with open(data_path, "wb") as f:
@@ -205,9 +221,12 @@ def signature_ok(data, signature):
             f.write(signature)
         res = subprocess.run(
             ["gpgv", "--status-fd", "1", "--keyring", PROXMOX_KEYRING, sig_path, data_path],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
-    status = {line.split()[1] for line in res.stdout.splitlines() if line.startswith("[GNUPG:] ") and len(line.split()) > 1}
+    status = {
+        line.split()[1] for line in res.stdout.splitlines() if line.startswith("[GNUPG:] ") and len(line.split()) > 1
+    }
     # ERRSIG (co-signer key not in our keyring) is tolerated; an expired or
     # revoked signature/key from our own keyring is not.
     rejected = {"BADSIG", "EXPSIG", "EXPKEYSIG", "REVKEYSIG"}
@@ -241,12 +260,16 @@ def resolve_stock_iso():
         # last release known to this code.
         fb = _ISO_NAME_RE.match(FALLBACK_ISO_NAME).groups()
         if int(fb[0]) == PROXMOX_MAJOR and tuple(map(int, fb)) > tuple(map(int, _ISO_NAME_RE.match(found[0]).groups())):
-            log(f"WARNING: {sums_url} only lists {found[0]}, older than the known {FALLBACK_ISO_NAME} - using the latter.")
+            log(
+                f"WARNING: {sums_url} only lists {found[0]}, older than the known {FALLBACK_ISO_NAME} - using the latter."
+            )
             return FALLBACK_ISO_NAME, FALLBACK_ISO_SHA256
         log(f"Latest Proxmox VE {PROXMOX_MAJOR} release: {found[0]}")
         return found
     if int(_ISO_NAME_RE.match(FALLBACK_ISO_NAME).group(1)) != PROXMOX_MAJOR:
-        log(f"ERROR: no Proxmox VE {PROXMOX_MAJOR} release found online and the fallback {FALLBACK_ISO_NAME} is a different major - aborting.")
+        log(
+            f"ERROR: no Proxmox VE {PROXMOX_MAJOR} release found online and the fallback {FALLBACK_ISO_NAME} is a different major - aborting."
+        )
         sys.exit(1)
     log(f"WARNING: no Proxmox VE {PROXMOX_MAJOR} release found online - falling back to {FALLBACK_ISO_NAME}.")
     return FALLBACK_ISO_NAME, FALLBACK_ISO_SHA256
@@ -259,10 +282,15 @@ def ilo_request(method, path, body=None, timeout=20):
     callers can inspect iLO's own error payload (e.g. UnableToModifyDuringSystemPOST)."""
     url = ILO_URL + path
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        "Authorization": _AUTH_HEADER,
-        "Content-Type": "application/json",
-    })
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Authorization": _AUTH_HEADER,
+            "Content-Type": "application/json",
+        },
+    )
     try:
         with urllib.request.urlopen(req, context=_SSL_CTX, timeout=timeout) as r:
             raw = r.read()
@@ -299,17 +327,35 @@ def root_password_hash(password, hostname):
     addressed ISO name - on every run, defeating the ISO cache. It is still
     unique per server and deliberately independent of the password, so it
     leaks nothing about it. Uses openssl (in the CI image) because Python
-    3.13 dropped the crypt module."""
+    3.13+ no longer has the crypt module."""
     digest = hashlib.sha256(f"pve-root-salt:{hostname}".encode()).digest()
     salt = "".join(_CRYPT_ALPHABET[b % 64] for b in digest[:16])
+    return sha512_crypt(password, salt)
+
+
+def sha512_crypt(password, salt):
+    """SHA-512-crypt via `openssl passwd -6` with the given salt."""
     res = subprocess.run(
         ["openssl", "passwd", "-6", "-salt", salt, "-stdin"],
-        input=password + "\n", capture_output=True, text=True, encoding="utf-8", check=True,
+        input=password + "\n",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     )
     hashed = res.stdout.strip()
-    if not re.fullmatch(r"\$6\$[./0-9A-Za-z]{16}\$[./0-9A-Za-z]{86}", hashed):
+    if not re.fullmatch(r"\$6\$[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}", hashed):
         raise RuntimeError("openssl passwd returned an unexpected hash format")
     return hashed
+
+
+def custom_iso_name(hostname, stock_iso_name, stock_iso_sha256, answer_toml):
+    """Content-addressed blob name of the per-host ISO: the stock release is
+    visible in the name, and the hash covers the stock ISO's sha256 plus the
+    rendered answer.toml, so any config or release change yields a new name."""
+    stock_version = stock_iso_name[len("proxmox-ve_") : -len(".iso")]
+    answer_hash = hashlib.sha256((stock_iso_sha256 + "\n" + answer_toml).encode()).hexdigest()[:16]
+    return f"{hostname}-pve{stock_version}-{answer_hash}.iso"
 
 
 def redfish_message_id(body):
@@ -317,7 +363,7 @@ def redfish_message_id(body):
     'iLO.2.x.UnableToModifyDuringSystemPOST'), or '' if there is none."""
     try:
         return body["error"]["@Message.ExtendedInfo"][0]["MessageId"]
-    except (KeyError, IndexError, TypeError):
+    except KeyError, IndexError, TypeError:
         return ""
 
 
@@ -453,7 +499,7 @@ def main():
     # failure that aborts the run leaves the server untouched.
     log(f"=== [{PVE_HOSTNAME}] Resolving the stock Proxmox ISO release ===")
     stock_iso_name, stock_iso_sha256 = resolve_stock_iso()
-    stock_version = stock_iso_name[len("proxmox-ve_"):-len(".iso")]
+    stock_version = stock_iso_name[len("proxmox-ve_") : -len(".iso")]
 
     log(f"=== [{PVE_HOSTNAME}] Verifying hardware model at {ILO_URL} ===")
     sysdata = ilo_get("/redfish/v1/Systems/1/")
@@ -475,14 +521,17 @@ def main():
     # later wait loop (not simply "at the end" - see the comment there for
     # why), so the installer's own internal reboot into the freshly-installed
     # OS isn't affected by it, and so normal boots work afterwards.
-    ilo_patch("/redfish/v1/Systems/1/", {
-        "Boot": {"BootSourceOverrideTarget": "Cd", "BootSourceOverrideEnabled": "Continuous"}
-    })
+    ilo_patch(
+        "/redfish/v1/Systems/1/",
+        {"Boot": {"BootSourceOverrideTarget": "Cd", "BootSourceOverrideEnabled": "Continuous"}},
+    )
     boot = ilo_get("/redfish/v1/Systems/1/").get("Boot", {})
     boot_check = (boot.get("BootSourceOverrideEnabled"), boot.get("BootSourceOverrideTarget"))
     log(f"BootSourceOverrideEnabled/Target: {boot_check[0]} {boot_check[1]}")
     if boot_check != ("Continuous", "Cd"):
-        log(f"ERROR: persistent boot override did not apply as expected (got {boot_check}, expected ('Continuous', 'Cd')).")
+        log(
+            f"ERROR: persistent boot override did not apply as expected (got {boot_check}, expected ('Continuous', 'Cd'))."
+        )
         sys.exit(1)
 
     log(f"=== [{PVE_HOSTNAME}] De-prioritizing local-disk boot entries in the persistent BootOrder ===")
@@ -557,9 +606,8 @@ def main():
     # prepare-iso rebuild, which are the only genuinely slow parts of this
     # job. Any config change naturally produces a different hash, so there's
     # no stale-cache risk and no manual invalidation needed.
-    answer_hash = hashlib.sha256((stock_iso_sha256 + "\n" + answer_toml).encode()).hexdigest()[:16]
-    custom_iso_name = f"{PVE_HOSTNAME}-pve{stock_version}-{answer_hash}.iso"
-    iso_url = f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/{AZURE_CONTAINER}/{custom_iso_name}"
+    iso_name = custom_iso_name(PVE_HOSTNAME, stock_iso_name, stock_iso_sha256, answer_toml)
+    iso_url = f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/{AZURE_CONTAINER}/{iso_name}"
 
     if head_ok(iso_url):
         log("Found an existing custom ISO for this exact config - reusing it, skipping the build.")
@@ -602,12 +650,22 @@ def main():
             upload_put(f"{stock_iso_blob_url}?{AZURE_SAS_TOKEN}", "source.iso")
 
         log(f"=== [{PVE_HOSTNAME}] Embedding answer file into a custom ISO ===")
-        subprocess.run([
-            "proxmox-auto-install-assistant", "prepare-iso", "source.iso",
-            # Generic local name: prepare-iso echoes it, and the real blob
-            # name is an anonymous download link (see below).
-            "--fetch-from", "iso", "--answer-file", "answer.toml", "--output", "custom.iso",
-        ], check=True)
+        subprocess.run(
+            [
+                "proxmox-auto-install-assistant",
+                "prepare-iso",
+                "source.iso",
+                # Generic local name: prepare-iso echoes it, and the real blob
+                # name is an anonymous download link (see below).
+                "--fetch-from",
+                "iso",
+                "--answer-file",
+                "answer.toml",
+                "--output",
+                "custom.iso",
+            ],
+            check=True,
+        )
 
         log(f"=== [{PVE_HOSTNAME}] Uploading custom ISO to Azure Blob Storage ===")
         upload_put(f"{iso_url}?{AZURE_SAS_TOKEN}", "custom.iso")
@@ -626,7 +684,9 @@ def main():
         log(f"(no previous media to eject, or eject failed - continuing: {e})")
 
     log(f"=== [{PVE_HOSTNAME}] Mounting the custom ISO as virtual CD/DVD ===")
-    status, body = ilo_post("/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/", {"Image": iso_url})
+    status, body = ilo_post(
+        "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/", {"Image": iso_url}
+    )
     if not 200 <= status < 300:
         abort_and_clear_override(f"InsertMedia failed (HTTP {status} {redfish_message_id(body)}).")
     # iLO can take a moment to reflect the new media - poll briefly.
@@ -642,14 +702,18 @@ def main():
         time.sleep(5)
     else:
         # The returned Image URL is deliberately not logged (could carry a token).
-        abort_and_clear_override(f"virtual CD does not show the custom ISO after InsertMedia (Inserted={media.get('Inserted')}, Image matches: {media.get('Image') == iso_url}).")
+        abort_and_clear_override(
+            f"virtual CD does not show the custom ISO after InsertMedia (Inserted={media.get('Inserted')}, Image matches: {media.get('Image') == iso_url})."
+        )
 
     log(f"=== [{PVE_HOSTNAME}] Re-confirming the persistent boot override is still Continuous/Cd ===")
     boot = ilo_get("/redfish/v1/Systems/1/").get("Boot", {})
     boot_check = (boot.get("BootSourceOverrideEnabled"), boot.get("BootSourceOverrideTarget"))
     log(f"BootSourceOverrideEnabled/Target: {boot_check[0]} {boot_check[1]}")
     if boot_check != ("Continuous", "Cd"):
-        log(f"ERROR: boot override is no longer 'Continuous Cd' (got {boot_check}) - refusing to reboot into an uncertain boot target.")
+        log(
+            f"ERROR: boot override is no longer 'Continuous Cd' (got {boot_check}) - refusing to reboot into an uncertain boot target."
+        )
         sys.exit(1)
 
     log(f"=== [{PVE_HOSTNAME}] Power-cycling host ===")
@@ -657,7 +721,9 @@ def main():
     reset_type = "ForceRestart" if power == "On" else "On"
     status, body = ilo_post("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/", {"ResetType": reset_type})
     if not 200 <= status < 300:
-        abort_and_clear_override(f"{reset_type} failed (HTTP {status} {redfish_message_id(body)}) - the installer was never started.")
+        abort_and_clear_override(
+            f"{reset_type} failed (HTTP {status} {redfish_message_id(body)}) - the installer was never started."
+        )
 
     log(f"=== [{PVE_HOSTNAME}] Waiting ~5 min, then clearing the persistent boot override ===")
     # The job no longer waits for the Proxmox web UI: GitLab's shared runners
@@ -698,7 +764,9 @@ def main():
             log(f"(transient error clearing boot override, will retry: {e})")
         else:
             if ok:
-                log(f"Cleared the persistent boot override after {int(time.monotonic() - reset_at)}s - past the risky first boot, well before the installer's own later internal reboot.")
+                log(
+                    f"Cleared the persistent boot override after {int(time.monotonic() - reset_at)}s - past the risky first boot, well before the installer's own later internal reboot."
+                )
                 override_cleared = True
                 break
             last_error = f"HTTP {status} {msg_id}".strip()
@@ -715,10 +783,13 @@ def main():
 
     log(f"=== [{PVE_HOSTNAME}] Install handed off - not waiting for completion ===")
     log("The unattended install keeps running on the host on its own (typically ~15-25 min, incl. one reboot).")
-    log(f"Check the result at https://{ip_only}:8006/ (root / PVE_ROOT_PASSWORD), or via the iLO Remote Console at {ILO_URL}.")
+    log(
+        f"Check the result at https://{ip_only}:8006/ (root / PVE_ROOT_PASSWORD), or via the iLO Remote Console at {ILO_URL}."
+    )
     log("The custom ISO stays mounted as virtual media (the installer still needs it). Once the web UI is up,")
     log("eject it in iLO (Virtual Media -> Eject): a later boot that falls")
     log("through to the virtual CD would start the unattended install again. The next run ejects it anyway.")
+
 
 if __name__ == "__main__":
     main()
