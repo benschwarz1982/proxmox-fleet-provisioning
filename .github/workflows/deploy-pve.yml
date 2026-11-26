@@ -52,6 +52,10 @@ jobs:
       # Same Dockerfile as the GitLab pipeline; built here (cached) instead of
       # pulled from a registry, so no package permissions are needed.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          # No build-record artifact: nobody uses it, and artifacts of a
+          # public repository are downloadable by any GitHub user.
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           load: true
