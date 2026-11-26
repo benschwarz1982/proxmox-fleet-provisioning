@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">proxmox-fleet-provisioning</title>
+  <desc id="desc">Unattended Proxmox VE installation for HPE ProLiant fleets via iLO Redfish</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="16" fill="url(#bg)"/>
+  <!-- server rack -->
+  <g transform="translate(90 60)" fill="none" stroke-width="3">
+    <rect x="0" y="0" width="200" height="180" rx="10" stroke="#475569"/>
+    <g stroke="#64748b">
+      <rect x="18" y="18" width="164" height="36" rx="5"/>
+      <rect x="18" y="72" width="164" height="36" rx="5"/>
+      <rect x="18" y="126" width="164" height="36" rx="5"/>
+    </g>
+    <g fill="#f97316" stroke="none">
+      <circle cx="160" cy="36" r="6"/>
+      <circle cx="160" cy="90" r="6"/>
+      <circle cx="160" cy="144" r="6"/>
+    </g>
+    <g stroke="#94a3b8" stroke-linecap="round">
+      <line x1="36" y1="36" x2="110" y2="36"/>
+      <line x1="36" y1="90" x2="110" y2="90"/>
+      <line x1="36" y1="144" x2="110" y2="144"/>
+    </g>
+  </g>
+  <g font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <text x="360" y="135" fill="#f8fafc" font-size="52" font-weight="700">proxmox-fleet-provisioning</text>
+    <text x="362" y="185" fill="#cbd5e1" font-size="26">Unattended Proxmox VE installs for HPE ProLiant fleets</text>
+    <text x="362" y="225" fill="#f97316" font-size="22" font-weight="600">iLO Redfish · signed releases · GitHub Actions</text>
+  </g>
+</svg>
