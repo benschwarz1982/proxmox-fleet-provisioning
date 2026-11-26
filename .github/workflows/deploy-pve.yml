@@ -61,6 +61,21 @@ jobs:
           # A cache-export hiccup must not block a deploy whose image built fine.
           cache-to: type=gha,scope=pve-provisioner,mode=max,ignore-error=true
 
+      # Public repository = public Actions logs: mask the run's target
+      # (hostname, IP, iLO URL and host) before anything can print it.
+      # Values come in via env, never interpolated into the script.
+      - name: Mask target details in logs
+        env:
+          PVE_HOSTNAME: ${{ inputs.pve_hostname }}
+          PVE_STATIC_IP: ${{ inputs.pve_static_ip }}
+          ILO_URL: ${{ inputs.ilo_url }}
+        run: |
+          ilo_host="${ILO_URL#*://}"
+          ilo_host="${ilo_host%%[:/]*}"
+          for value in "$PVE_HOSTNAME" "$PVE_STATIC_IP" "${PVE_STATIC_IP%%/*}" "$ILO_URL" "$ilo_host"; do
+            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+          done
+
       # Inputs and secrets only ever reach the script as environment
       # variables (never interpolated into the shell command), which avoids
       # script injection and keeps secrets out of the process list.
@@ -69,30 +84,31 @@ jobs:
           PVE_HOSTNAME: ${{ inputs.pve_hostname }}
           PVE_STATIC_IP: ${{ inputs.pve_static_ip }}
           ILO_URL: ${{ inputs.ilo_url }}
-          PVE_NIC_INDEX: ${{ inputs.pve_nic_index || vars.PVE_NIC_INDEX }}
-          ILO_USER: ${{ vars.ILO_USER }}
-          PVE_GATEWAY: ${{ vars.PVE_GATEWAY }}
-          PVE_DNS: ${{ vars.PVE_DNS }}
-          AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
-          PVE_DOMAIN: ${{ vars.PVE_DOMAIN }}
-          PVE_MAILTO: ${{ vars.PVE_MAILTO }}
-          ILO_BLOCKED_PORTS: ${{ vars.ILO_BLOCKED_PORTS }}
+          PVE_NIC_INDEX: ${{ inputs.pve_nic_index || vars.PVE_NIC_INDEX || secrets.PVE_NIC_INDEX }}
+          ILO_USER: ${{ vars.ILO_USER || secrets.ILO_USER }}
+          PVE_GATEWAY: ${{ vars.PVE_GATEWAY || secrets.PVE_GATEWAY }}
+          PVE_DNS: ${{ vars.PVE_DNS || secrets.PVE_DNS }}
+          AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || secrets.AZURE_STORAGE_ACCOUNT }}
+          PVE_DOMAIN: ${{ vars.PVE_DOMAIN || secrets.PVE_DOMAIN }}
+          PVE_MAILTO: ${{ vars.PVE_MAILTO || secrets.PVE_MAILTO }}
+          ILO_BLOCKED_PORTS: ${{ vars.ILO_BLOCKED_PORTS || secrets.ILO_BLOCKED_PORTS }}
           ILO_PASSWORD: ${{ secrets.ILO_PASSWORD }}
           PVE_ROOT_PASSWORD: ${{ secrets.PVE_ROOT_PASSWORD }}
           AZURE_SAS_TOKEN: ${{ secrets.AZURE_SAS_TOKEN }}
           # Optional overrides (empty = provision.py's default), same names
-          # as the GitLab CI/CD variables - set them as environment variables
-          # of pve-fleet only when needed.
-          PROXMOX_ISO_BASE_URL: ${{ vars.PROXMOX_ISO_BASE_URL }}
-          PROXMOX_MAJOR: ${{ vars.PROXMOX_MAJOR }}
-          PROXMOX_ISO_NAME: ${{ vars.PROXMOX_ISO_NAME }}
-          PROXMOX_ISO_SHA256: ${{ vars.PROXMOX_ISO_SHA256 }}
-          PROXMOX_KEYRING: ${{ vars.PROXMOX_KEYRING }}
-          AZURE_CONTAINER: ${{ vars.AZURE_CONTAINER }}
-          PVE_TIMEZONE: ${{ vars.PVE_TIMEZONE }}
-          PVE_KEYBOARD: ${{ vars.PVE_KEYBOARD }}
-          PVE_COUNTRY: ${{ vars.PVE_COUNTRY }}
-          PVE_DISK_MODEL: ${{ vars.PVE_DISK_MODEL }}
+          # as the GitLab CI/CD variables - set them in pve-fleet only when
+          # needed. Every non-password value may be an environment variable
+          # or (to keep it out of public logs) an environment secret.
+          PROXMOX_ISO_BASE_URL: ${{ vars.PROXMOX_ISO_BASE_URL || secrets.PROXMOX_ISO_BASE_URL }}
+          PROXMOX_MAJOR: ${{ vars.PROXMOX_MAJOR || secrets.PROXMOX_MAJOR }}
+          PROXMOX_ISO_NAME: ${{ vars.PROXMOX_ISO_NAME || secrets.PROXMOX_ISO_NAME }}
+          PROXMOX_ISO_SHA256: ${{ vars.PROXMOX_ISO_SHA256 || secrets.PROXMOX_ISO_SHA256 }}
+          PROXMOX_KEYRING: ${{ vars.PROXMOX_KEYRING || secrets.PROXMOX_KEYRING }}
+          AZURE_CONTAINER: ${{ vars.AZURE_CONTAINER || secrets.AZURE_CONTAINER }}
+          PVE_TIMEZONE: ${{ vars.PVE_TIMEZONE || secrets.PVE_TIMEZONE }}
+          PVE_KEYBOARD: ${{ vars.PVE_KEYBOARD || secrets.PVE_KEYBOARD }}
+          PVE_COUNTRY: ${{ vars.PVE_COUNTRY || secrets.PVE_COUNTRY }}
+          PVE_DISK_MODEL: ${{ vars.PVE_DISK_MODEL || secrets.PVE_DISK_MODEL }}
         run: |
           docker run --rm -v "$PWD:/work" -w /work \
             -e PVE_HOSTNAME -e PVE_STATIC_IP -e ILO_URL -e PVE_NIC_INDEX \
