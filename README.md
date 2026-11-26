@@ -165,17 +165,18 @@ One-time setup - **Settings → Environments → New environment
 - Optionally **Required reviewers**, for an approval before each reinstall.
 - **Environment secrets**: `ILO_PASSWORD`, `PVE_ROOT_PASSWORD`,
   `AZURE_SAS_TOKEN`.
-- **Environment variables**: `ILO_USER`, `PVE_GATEWAY`, `PVE_DNS`,
+- **Environment secrets or variables** (either works; secrets keep the
+  values out of the public logs): `ILO_USER`, `PVE_GATEWAY`, `PVE_DNS`,
   `AZURE_STORAGE_ACCOUNT`, `PVE_DOMAIN`, `PVE_MAILTO`, `ILO_BLOCKED_PORTS`,
-  plus any optional override from the defaults
-  list above (e.g. `PROXMOX_ISO_NAME`/`PROXMOX_ISO_SHA256`,
-  `PVE_DISK_MODEL`, `PVE_NIC_INDEX`).
+  plus any optional override from the defaults list above (e.g.
+  `PROXMOX_ISO_NAME`/`PROXMOX_ISO_SHA256`, `PVE_DISK_MODEL`,
+  `PVE_NIC_INDEX`).
 
 Actions are pinned to full commit SHAs (version in a comment), the
 workflows only get `contents: read`, and inputs/secrets reach the script
 solely as environment variables. Public repositories have public Actions
-logs, so `provision.py` never logs the custom ISO's (anonymous) download
-URL. GitHub-hosted runners are cloud IPs, so the "Known limitations" below
+logs: the deploy job masks the run's hostname, IP and iLO URL/host first,
+and `provision.py` never logs the custom ISO's (anonymous) download URL. GitHub-hosted runners are cloud IPs, so the "Known limitations" below
 apply (no web UI check, Proxmox download may be blocked).
 
 ## Usage with GitLab CI (alternative)
