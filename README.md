@@ -222,9 +222,6 @@ plus only `gpgv`, `openssl`, `xorriso` and `proxmox-auto-install-assistant`;
 the Proxmox release key is fetched with a pinned checksum and trusted by apt
 for the Proxmox repo only.
 
-`.github/dependabot.yml` opens weekly PRs for new versions of the pinned
-GitHub Actions, dev tools and the base image.
-
 ## Known limitations
 
 - `PVE_NIC_INDEX` defaults to `1` (the first `EthernetInterfaces` entry), which
