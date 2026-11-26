@@ -1,0 +1,53 @@
+# Provisions one ProLiant DL160 Gen10 with an unattended Proxmox VE 9 install.
+# Nothing server-specific or environment-specific is hardcoded in this repo.
+# See README.md for the full list of CI/CD variables to configure in
+# Settings -> CI/CD -> Variables (fleet-wide config + secrets) versus what
+# to set on "Run pipeline" each time (PVE_HOSTNAME, PVE_STATIC_IP, ILO_URL -
+# declared below so the "Run pipeline" form shows them as labeled fields
+# with a description and an example value, instead of requiring you to
+# know to add plain key/value pairs yourself).
+stages:
+  - validate
+  - build
+  - deploy
+
+variables:
+  PVE_HOSTNAME:
+    description: "Target Proxmox hostname, e.g. pve-node15 - CHANGE before running, this placeholder is not a real server."
+    value: "CHANGE-ME-pve-hostname"
+  PVE_STATIC_IP:
+    description: "Target static IP in CIDR notation, e.g. 192.0.2.35/24 - CHANGE before running, this placeholder is not a real network."
+    value: "0.0.0.0/32"
+  ILO_URL:
+    description: "Full iLO base URL incl. scheme+port, e.g. https://ilo.example.com:4415 - CHANGE before running, this placeholder does not resolve."
+    value: "https://ilo.example.com:0"
+
+validate:python:
+  stage: validate
+  image: python:3.13-slim
+  script:
+    - python3 -m py_compile provision.py
+
+build:image:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker build -t "$CI_REGISTRY_IMAGE:latest" .
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker push "$CI_REGISTRY_IMAGE:latest"
+  rules:
+    - changes:
+        - Dockerfile
+
+deploy:pve:
+  stage: deploy
+  image: "$CI_REGISTRY_IMAGE:latest"
+  timeout: 45m
+  script:
+    - python3 provision.py
+  rules:
+    - if: '$PVE_HOSTNAME && $PVE_STATIC_IP && $ILO_URL'
+      when: manual
+    - when: never

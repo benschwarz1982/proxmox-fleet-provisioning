@@ -1,0 +1,105 @@
+# Provisions ONE ProLiant DL160 Gen10 with an unattended Proxmox VE 9 install
+# - the GitHub counterpart of the GitLab `deploy:pve` job. See README.md
+# ("Running from GitHub Actions") for the required environment secrets and
+# variables.
+name: Deploy Proxmox VE
+
+on:
+  workflow_dispatch:
+    inputs:
+      pve_hostname:
+        description: "Target Proxmox hostname, e.g. pve-node15"
+        required: true
+        type: string
+      pve_static_ip:
+        description: "Target static IP in CIDR notation, e.g. 192.0.2.35/24"
+        required: true
+        type: string
+      ilo_url:
+        description: "Full iLO base URL incl. scheme+port, e.g. https://ilo.example.com:4415"
+        required: true
+        type: string
+      pve_nic_index:
+        description: "Optional: EthernetInterfaces index of the cabled NIC (default 1)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# Never run two installs against the same server at once; different servers
+# run in parallel.
+concurrency:
+  group: deploy-pve-${{ inputs.ilo_url }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy ${{ inputs.pve_hostname }}
+    runs-on: ubuntu-24.04
+    # Holds the fleet secrets/variables; add "Required reviewers" to it in
+    # Settings -> Environments for a manual approval before each reinstall.
+    environment: pve-fleet
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Same Dockerfile as the GitLab pipeline; built here (cached) instead of
+      # pulled from a registry, so no package permissions are needed.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: pve-provisioner:ci
+          cache-from: type=gha,scope=pve-provisioner
+          # A cache-export hiccup must not block a deploy whose image built fine.
+          cache-to: type=gha,scope=pve-provisioner,mode=max,ignore-error=true
+
+      # Inputs and secrets only ever reach the script as environment
+      # variables (never interpolated into the shell command), which avoids
+      # script injection and keeps secrets out of the process list.
+      - name: Provision
+        env:
+          PVE_HOSTNAME: ${{ inputs.pve_hostname }}
+          PVE_STATIC_IP: ${{ inputs.pve_static_ip }}
+          ILO_URL: ${{ inputs.ilo_url }}
+          PVE_NIC_INDEX: ${{ inputs.pve_nic_index || vars.PVE_NIC_INDEX }}
+          ILO_USER: ${{ vars.ILO_USER }}
+          PVE_GATEWAY: ${{ vars.PVE_GATEWAY }}
+          PVE_DNS: ${{ vars.PVE_DNS }}
+          AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+          PVE_DOMAIN: ${{ vars.PVE_DOMAIN }}
+          PVE_MAILTO: ${{ vars.PVE_MAILTO }}
+          ILO_BLOCKED_PORTS: ${{ vars.ILO_BLOCKED_PORTS }}
+          ILO_PASSWORD: ${{ secrets.ILO_PASSWORD }}
+          PVE_ROOT_PASSWORD: ${{ secrets.PVE_ROOT_PASSWORD }}
+          AZURE_SAS_TOKEN: ${{ secrets.AZURE_SAS_TOKEN }}
+          # Optional overrides (empty = provision.py's default), same names
+          # as the GitLab CI/CD variables - set them as environment variables
+          # of pve-fleet only when needed.
+          PROXMOX_ISO_BASE_URL: ${{ vars.PROXMOX_ISO_BASE_URL }}
+          PROXMOX_MAJOR: ${{ vars.PROXMOX_MAJOR }}
+          PROXMOX_ISO_NAME: ${{ vars.PROXMOX_ISO_NAME }}
+          PROXMOX_ISO_SHA256: ${{ vars.PROXMOX_ISO_SHA256 }}
+          PROXMOX_KEYRING: ${{ vars.PROXMOX_KEYRING }}
+          AZURE_CONTAINER: ${{ vars.AZURE_CONTAINER }}
+          PVE_TIMEZONE: ${{ vars.PVE_TIMEZONE }}
+          PVE_KEYBOARD: ${{ vars.PVE_KEYBOARD }}
+          PVE_COUNTRY: ${{ vars.PVE_COUNTRY }}
+          PVE_DISK_MODEL: ${{ vars.PVE_DISK_MODEL }}
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work \
+            -e PVE_HOSTNAME -e PVE_STATIC_IP -e ILO_URL -e PVE_NIC_INDEX \
+            -e ILO_USER -e PVE_GATEWAY -e PVE_DNS -e AZURE_STORAGE_ACCOUNT \
+            -e PVE_DOMAIN -e PVE_MAILTO -e ILO_BLOCKED_PORTS \
+            -e ILO_PASSWORD -e PVE_ROOT_PASSWORD -e AZURE_SAS_TOKEN \
+            -e PROXMOX_ISO_BASE_URL -e PROXMOX_MAJOR -e PROXMOX_ISO_NAME -e PROXMOX_ISO_SHA256 \
+            -e PROXMOX_KEYRING -e AZURE_CONTAINER \
+            -e PVE_TIMEZONE -e PVE_KEYBOARD -e PVE_COUNTRY -e PVE_DISK_MODEL \
+            pve-provisioner:ci python3 provision.py

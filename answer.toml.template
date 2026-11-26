@@ -1,0 +1,18 @@
+[global]
+keyboard = "${PVE_KEYBOARD}"
+country = "${PVE_COUNTRY}"
+fqdn = "${FQDN}"
+mailto = "${PVE_MAILTO}"
+timezone = "${PVE_TIMEZONE}"
+root-password-hashed = "${PVE_ROOT_PASSWORD_HASHED}"
+
+[network]
+source = "from-answer"
+cidr = "${PVE_STATIC_IP}"
+dns = "${PVE_DNS}"
+gateway = "${PVE_GATEWAY}"
+filter.ID_NET_NAME_MAC = "${MAC_FILTER}"
+
+[disk-setup]
+filesystem = "ext4"
+filter.ID_MODEL = "${PVE_DISK_MODEL}"
